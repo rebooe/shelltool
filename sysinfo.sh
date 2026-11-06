@@ -100,12 +100,20 @@ print_info "CPU 型号" "${CPU_MODEL:-无法获取}"
 print_info "CPU 核心数" "${CPU_CORES:-无法获取}"
 
 # 内存信息
-if command -v free &> /dev/null; then
-    MEM_TOTAL=$(free -h 2>/dev/null | awk '/^Mem:/ {print $2}')
-else
-    MEM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
-    MEM_MB=$((MEM_KB / 1024))
-    [ $MEM_MB -gt 1024 ] && MEM_TOTAL="$((MEM_MB / 1024)) GiB" || MEM_TOTAL="${MEM_MB} MiB"
+# 优先读 /proc/meminfo：MemTotal 是内核字段，不随 locale 变化，也不依赖 procps/busybox 的 free
+if [ -r /proc/meminfo ]; then
+    MEM_KB=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
+fi
+
+if [ -n "$MEM_KB" ]; then
+    if [ "$MEM_KB" -ge 1048576 ]; then
+        MEM_TOTAL=$(awk -v k="$MEM_KB" 'BEGIN {printf "%.1f GiB", k / 1048576}')
+    else
+        MEM_TOTAL=$(awk -v k="$MEM_KB" 'BEGIN {printf "%.0f MiB", k / 1024}')
+    fi
+elif command -v free &> /dev/null; then
+    # 兜底：不匹配行首文字（避免中文 locale 下的「内存：」），直接取第 2 行的总量列
+    MEM_TOTAL=$(free -h 2>/dev/null | awk 'NR==2 {print $2}')
 fi
 print_info "内存总量" "${MEM_TOTAL:-无法获取}"
 
